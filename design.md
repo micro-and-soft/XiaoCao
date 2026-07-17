@@ -6,6 +6,7 @@ Cost Profile: Free Tier optimized (~ $0/mo base cost, pay-per-execution)
 ------------------------------
 ## 1. System Architecture Diagram
 
+```text
   ┌────────────────────────────────────────────────────────┐
   │               AZURE STATIC WEB APP (SWA)               │
   │                                                        │
@@ -28,10 +29,11 @@ Cost Profile: Free Tier optimized (~ $0/mo base cost, pay-per-execution)
                          ┌─────────────────────────────────────┐
                          │       Azure AI Foundry              │
                          │    Persistent Agent Engine          │
-                         └─────────────────────────────────────┘
-
+                         └─────────────────────────────────────┘```
 ------------------------------
-## 2. Component Specifications## 2.1 Static Frontend Layer
+## 2. Component Specifications
+
+## 2.1 Static Frontend Layer
 
 * Framework: React 19 / TypeScript / Vite (Compiled down to pure HTML/JS/CSS assets).
 * Styling: Tailwind CSS + Shadcn UI (Provides high-performance, accessible components with zero runtime JavaScript execution overhead).
@@ -47,6 +49,7 @@ Cost Profile: Free Tier optimized (~ $0/mo base cost, pay-per-execution)
 ## 3. Communication Sequence & Execution Control
 To bypass the strict 100-second execution timeout enforced by the Azure Static Web Apps routing proxy, the system relies on an Asynchronous Execution Pattern rather than streaming long-lived server-sent events.
 
+```text
 [ Client Browser ]          [ SWA API (/api/run) ]        [ Azure AI Foundry ]
        │                              │                              │
        │  1. POST Prompt Payload       │                              │
@@ -83,7 +86,9 @@ To bypass the strict 100-second execution timeout enforced by the Azure Static W
        │<─────────────────────────────┤                              │
 
 ------------------------------
-## 4. Source Code Blueprint## 4.1 Serverless Orchestrator (/api/src/functions/postPrompt.ts)
+## 4. Source Code Blueprint
+
+## 4.1 Serverless Orchestrator (/api/src/functions/postPrompt.ts)
 This serverless function creates the communication channel inside the secure Azure AI environment.
 
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";import { AzureAIAgentClient } from "@azure/ai-agents";import { DefaultAzureCredential } from "@azure/identity";
@@ -122,10 +127,12 @@ app.http("postPrompt", {
     route: "chat/prompt",
     handler: postPrompt
 });
+```
 
 ## 4.2 Frontend Polling Engine (src/hooks/useAgentSession.ts)
 This component runs completely on the client side, keeping the browser UI fully interactive while the background system executes.
 
+```typescript
 import { useState } from "react";
 export function useAgentSession() {
   const [messages, setMessages] = useState<any[]>([]);
@@ -167,7 +174,9 @@ export function useAgentSession() {
 }
 
 ------------------------------
-## 5. Deployment Configuration## 5.1 CI/CD Configuration File (.github/workflows/azure-static-web-apps.yml)
+## 5. Deployment Configuration
+
+## 5.1 CI/CD Configuration File (.github/workflows/azure-static-web-apps.yml)
 This file compiles the UI assets and automatically deploys them to the $0 Static Web Apps container whenever code changes.
 
 name: Deploy Chat UI to Azure SWA
@@ -194,6 +203,7 @@ jobs:
           app_location: "/"          # Root repository directory for frontend
           api_location: "api"        # Azure Functions subdirectory
           output_location: "dist"    # Vite build static outputs target directory
+```
 
 ------------------------------
 ## 6. Commercialization & White-Label Strategy

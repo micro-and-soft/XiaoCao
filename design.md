@@ -29,7 +29,8 @@ Cost Profile: Free Tier optimized (~ $0/mo base cost, pay-per-execution)
                          ┌─────────────────────────────────────┐
                          │       Azure AI Foundry              │
                          │    Persistent Agent Engine          │
-                         └─────────────────────────────────────┘```
+                         └─────────────────────────────────────┘
+```
 ------------------------------
 ## 2. Component Specifications
 
@@ -49,48 +50,34 @@ Cost Profile: Free Tier optimized (~ $0/mo base cost, pay-per-execution)
 ## 3. Communication Sequence & Execution Control
 To bypass the strict 100-second execution timeout enforced by the Azure Static Web Apps routing proxy, the system relies on an Asynchronous Execution Pattern rather than streaming long-lived server-sent events.
 
-```text
-[ Client Browser ]          [ SWA API (/api/run) ]        [ Azure AI Foundry ]
-       │                              │                              │
-       │  1. POST Prompt Payload       │                              │
-       ├─────────────────────────────>│                              │
-       │                              │  2. createMessage() &        │
-       │                              │     createRun()              │
-       │                              ├─────────────────────────────>│
-       │  3. Return threadId + runId  │                              │
-       │<─────────────────────────────┤                              │
-       │                              │                              │
-       │  == BEGIN POLL LOOP ==       │                              │
-       │                              │                              │
-       │  4. GET status?runId=xyz     │                              │
-       ├─────────────────────────────>│                              │
-       │                              │  5. Retrieve Run Status      │
-       │                              ├─────────────────────────────>│
-       │  6. Return state (e.g. "in_progress")                       │
-       │<─────────────────────────────┤                              │
-       │                              │                              │
-       │  [Wait 1.5 seconds]          │                              │
-       │                              │                              │
-       │  7. GET status?runId=xyz     │                              │
-       ├─────────────────────────────>│                              │
-       │                              │  8. Retrieve Run Status      │
-       │                              ├─────────────────────────────>│
-       │  9. Return state ("completed")                              │
-       │<─────────────────────────────┤                              │
-       │                              │                              │
-       │  10. GET messages?threadId=abc                              │
-       ├─────────────────────────────>│                              │
-       │                              │  11. Fetch Final Text       │
-       │                              ├─────────────────────────────>│
-       │  12. Render text to Screen   │                              │
-       │<─────────────────────────────┤                              │
+```mermaid
+sequenceDiagram
+    participant C as Client Browser
+    participant A as SWA API (/api/chat)
+    participant F as Azure AI Foundry
 
+    C->>A: 1. POST /prompt (message)
+    A->>F: 2. createMessage() & createRun()
+    A-->>C: 3. Return threadId + runId
+
+    loop Poll every 1.5s until terminal state
+        C->>A: 4. GET /status?threadId&runId
+        A->>F: 5. Retrieve run status
+        A-->>C: 6. Return state (in_progress / completed / failed)
+    end
+
+    C->>A: 7. GET /messages?threadId
+    A->>F: 8. Fetch final message text
+    A-->>C: 9. Return transcript
+    Note over C: 10. Render text to screen
+```
 ------------------------------
 ## 4. Source Code Blueprint
 
 ## 4.1 Serverless Orchestrator (/api/src/functions/postPrompt.ts)
 This serverless function creates the communication channel inside the secure Azure AI environment.
 
+````
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";import { AzureAIAgentClient } from "@azure/ai-agents";import { DefaultAzureCredential } from "@azure/identity";
 export async function postPrompt(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
     try {

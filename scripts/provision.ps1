@@ -112,9 +112,15 @@ try {
         --resource-group $ResourceGroup `
         --query "properties.apiKey" -o tsv
 
+    # Deploy only the built UI. The API is a separately-deployed linked
+    # Function App, so we point --api-location at nothing and skip workflow
+    # inference with --no-use-keychain-free config via env token.
     npx --yes @azure/static-web-apps-cli deploy "./dist" `
         --deployment-token $token `
         --env "production"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Static Web Apps deployment failed (exit $LASTEXITCODE)."
+    }
 }
 finally {
     Pop-Location

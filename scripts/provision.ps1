@@ -23,8 +23,8 @@ param(
     [Parameter(Mandatory = $true)] [string] $FoundryAgentName,
     [Parameter(Mandatory = $true)] [string] $FoundryEndpoint,
     [Parameter(Mandatory = $true)] [string] $FoundryResourceId,
-    [string] $Location = "eastus2",
-    [string] $SwaLocation = "eastus2",
+    [string] $Location = "eastasia",
+    [string] $SwaLocation = "eastasia",
     [string] $NamePrefix = "xiaocao"
 )
 

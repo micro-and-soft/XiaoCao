@@ -5,6 +5,7 @@ api/node_modules/
 # Build output
 dist/
 api/dist/
+*.tsbuildinfo
 
 # Local settings & secrets
 api/local.settings.json

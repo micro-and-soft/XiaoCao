@@ -1,2 +1,20 @@
+# Dependencies
 node_modules/
-package-lock.json
+api/node_modules/
+
+# Build output
+dist/
+api/dist/
+
+# Local settings & secrets
+api/local.settings.json
+.env
+.env.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db

@@ -1,0 +1,9 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "AzureWebJobsStorage": "",
+    "AZURE_AI_FOUNDRY_ENDPOINT": "",
+    "AZURE_AI_AGENT_NAME": ""
+  }
+}

@@ -14,7 +14,10 @@
         -ResourceGroup "rg-xiaocao" `
         -FoundryAgentName "support-agent" `
         -FoundryEndpoint "https://my-proj.services.ai.azure.com/api/projects/my-proj" `
-        -FoundryResourceId "/subscriptions/.../resourceGroups/rg-ai/providers/Microsoft.CognitiveServices/accounts/my-foundry"
+        -FoundryResourceId "/subscriptions/<sub>/resourceGroups/rg-ai/providers/Microsoft.CognitiveServices/accounts/my-foundry"
+
+    Note: FoundryResourceId must be the bare ARM resource id (NOT a portal URL).
+    Get it with: az cognitiveservices account show -n <account> -g <rg> --query id -o tsv
 #>
 [CmdletBinding()]
 param(
@@ -40,15 +43,45 @@ function Require-Command($name) {
 Require-Command az
 Require-Command npm
 
+# --- Validate & normalize inputs -------------------------------------------
+
+function Invoke-Az {
+    param([Parameter(Mandatory)][string[]] $Args, [string] $ErrorMessage = "Azure CLI command failed.")
+    $result = & az @Args
+    if ($LASTEXITCODE -ne 0) {
+        throw "$ErrorMessage (az exit $LASTEXITCODE)"
+    }
+    return $result
+}
+
+# The Foundry resource id must be a bare ARM resource id, not a portal URL.
+# A common mistake is pasting the browser address bar (https://portal.azure.com/#@.../resource/subscriptions/...).
+# Recover the id if a portal URL was supplied, otherwise validate the format.
+if ($FoundryResourceId -match '/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.CognitiveServices/accounts/[^/?#]+') {
+    $FoundryResourceId = $Matches[0]
+}
+else {
+    throw "FoundryResourceId does not contain a valid Cognitive Services account resource id. " +
+          "Expected '/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.CognitiveServices/accounts/<name>'. " +
+          "Get it with: az cognitiveservices account show -n <account> -g <rg> --query id -o tsv"
+}
+Write-Host "    Foundry resource id : $FoundryResourceId" -ForegroundColor DarkGray
+
+# Derive the project name from the endpoint so we can also grant at project scope.
+$projectName = $null
+if ($FoundryEndpoint -match '/projects/([^/?#]+)') {
+    $projectName = $Matches[1]
+}
+
 Write-Host "==> Setting subscription context" -ForegroundColor Cyan
-az account set --subscription $SubscriptionId | Out-Null
+Invoke-Az @('account', 'set', '--subscription', $SubscriptionId) "Failed to set subscription context." | Out-Null
 
 Write-Host "==> Ensuring resource group '$ResourceGroup'" -ForegroundColor Cyan
-az group create --name $ResourceGroup --location $Location | Out-Null
+Invoke-Az @('group', 'create', '--name', $ResourceGroup, '--location', $Location) "Failed to create resource group." | Out-Null
 
 Write-Host "==> Deploying infrastructure (Bicep)" -ForegroundColor Cyan
 $deployName = "xiaocao-$(Get-Date -Format yyyyMMddHHmmss)"
-$outputs = az deployment group create `
+$outputsJson = az deployment group create `
     --resource-group $ResourceGroup `
     --name $deployName `
     --template-file "$root/infra/main.bicep" `
@@ -58,24 +91,49 @@ $outputs = az deployment group create `
         namePrefix=$NamePrefix `
         foundryEndpoint=$FoundryEndpoint `
         agentName=$FoundryAgentName `
-    --query properties.outputs -o json | ConvertFrom-Json
+    --query properties.outputs -o json
+if ($LASTEXITCODE -ne 0) {
+    throw "Infrastructure deployment failed. Review the Bicep error above (common cause: subscription quota for the Function App Consumption plan)."
+}
+$outputs = $outputsJson | ConvertFrom-Json
 
 $functionAppName = $outputs.functionAppName.value
 $principalId     = $outputs.functionAppPrincipalId.value
 $swaName         = $outputs.swaName.value
 $swaHostname     = $outputs.swaDefaultHostname.value
 
+if (-not $functionAppName -or -not $principalId -or -not $swaName) {
+    throw "Infrastructure deployment did not return the expected outputs."
+}
+
 Write-Host "    Function App : $functionAppName"
 Write-Host "    SWA          : $swaName ($swaHostname)"
 
 Write-Host "==> Granting Foundry access to the Function App identity" -ForegroundColor Cyan
 # 'Azure AI Developer' lets the identity create threads/runs against the agent.
-az role assignment create `
-    --assignee-object-id $principalId `
-    --assignee-principal-type ServicePrincipal `
-    --role "Azure AI Developer" `
-    --scope $FoundryResourceId 2>$null | Out-Null
-Write-Host "    Role assignment ensured."
+# Assign at the account scope and (if resolvable) the project sub-scope, since the
+# Foundry data plane may enforce access at the project level.
+$scopes = @($FoundryResourceId)
+if ($projectName) {
+    $scopes += "$FoundryResourceId/projects/$projectName"
+}
+foreach ($scope in $scopes) {
+    $existing = az role assignment list --assignee $principalId --scope $scope --role "Azure AI Developer" --query "[0].id" -o tsv 2>$null
+    if ($existing) {
+        Write-Host "    Role already present at $scope" -ForegroundColor DarkGray
+        continue
+    }
+    az role assignment create `
+        --assignee-object-id $principalId `
+        --assignee-principal-type ServicePrincipal `
+        --role "Azure AI Developer" `
+        --scope $scope | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to assign 'Azure AI Developer' at scope: $scope"
+    }
+    Write-Host "    Granted 'Azure AI Developer' at $scope"
+}
+Write-Host "    Note: RBAC can take a few minutes to propagate to the Foundry data plane." -ForegroundColor DarkGray
 
 Write-Host "==> Building & deploying the Function App (API)" -ForegroundColor Cyan
 Push-Location "$root/api"

@@ -135,6 +135,38 @@ foreach ($scope in $scopes) {
 }
 Write-Host "    Note: RBAC can take a few minutes to propagate to the Foundry data plane." -ForegroundColor DarkGray
 
+Write-Host "==> Resolving agent id (so the API never has to list agents at runtime)" -ForegroundColor Cyan
+# Resolving the id once here avoids a per-cold-instance listAgents() call, which is
+# both slow and prone to transient 401s while RBAC propagates. The Function prefers
+# AZURE_AI_AGENT_ID when present and only falls back to name lookup otherwise.
+$agentId = $null
+try {
+    $aiToken = az account get-access-token --resource "https://ai.azure.com" --query accessToken -o tsv 2>$null
+    if ($LASTEXITCODE -eq 0 -and $aiToken) {
+        $listUri = "$FoundryEndpoint/assistants?api-version=2025-05-01"
+        $resp = Invoke-RestMethod -Uri $listUri -Headers @{ Authorization = "Bearer $aiToken" } -ErrorAction Stop
+        $match = $resp.data | Where-Object { $_.name -eq $FoundryAgentName } | Select-Object -First 1
+        if ($match) { $agentId = $match.id }
+    }
+}
+catch {
+    Write-Warning "Could not pre-resolve agent id ($($_.Exception.Message)). The API will resolve it by name at runtime."
+}
+
+if ($agentId) {
+    Write-Host "    Resolved '$FoundryAgentName' -> $agentId"
+    az functionapp config appsettings set `
+        --resource-group $ResourceGroup `
+        --name $functionAppName `
+        --settings AZURE_AI_AGENT_ID=$agentId | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to set AZURE_AI_AGENT_ID app setting."
+    }
+}
+else {
+    Write-Warning "Agent id not resolved; falling back to runtime name lookup. If you see intermittent 500s, set AZURE_AI_AGENT_ID manually."
+}
+
 Write-Host "==> Building & deploying the Function App (API)" -ForegroundColor Cyan
 Push-Location "$root/api"
 try {

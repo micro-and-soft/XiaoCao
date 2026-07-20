@@ -1,205 +1,138 @@
-Here is a complete, production-ready architectural design document tailored for Azure Static Web Apps (SWA). This design provides an enterprise-ready, white-labelable chat UI for Azure AI Foundry Agents while maintaining a near-zero hosting cost for consumers.
-------------------------------
-## Technical Design Document: Serverless Chat UI for Azure AI Foundry
-Target Architecture: Azure Static Web Apps (SWA) + Azure Functions (Consumption)
-Cost Profile: Free Tier optimized (~ $0/mo base cost, pay-per-execution)
-------------------------------
-## 1. System Architecture Diagram
+# Technical Design: Low-Cost Chat UI for Azure AI Foundry
 
-```text
-  ┌────────────────────────────────────────────────────────┐
-  │               AZURE STATIC WEB APP (SWA)               │
-  │                                                        │
-  │   ┌──────────────────────┐    ┌────────────────────┐   │
-  │   │   Static Frontend    │───>│ Built-in API Proxy │   │
-  │   │ (React / Vite / TS)  │<───│    (/api/*)        │   │
-  │   └──────────────────────┘    └─────────┬──────────┘   │
-  └─────────────────────────────────────────┼──────────────┘
-                                            ▼
-                         ┌─────────────────────────────────────┐
-                         │      Azure Function App             │
-                         │   (Consumption / Serverless Node)   │
-                         └──────────────────┬──────────────────┘
-                                            ▼ (Secured Auth)
-                         ┌─────────────────────────────────────┐
-                         │          Azure Key Vault            │
-                         │      (Stores AI Project Keys)       │
-                         └──────────────────┬──────────────────┘
-                                            ▼
-                         ┌─────────────────────────────────────┐
-                         │       Azure AI Foundry              │
-                         │    Persistent Agent Engine          │
-                         └─────────────────────────────────────┘
+A serverless, white-label chat UI that puts an Azure AI Foundry agent in front of users
+at **near-zero hosting cost**. One codebase deploys to two cost tiers: a **$0 test**
+environment and a lean **production** environment.
+
+---
+
+## 1. Goals & Non-Goals
+
+**Goals**
+- Cheapest possible hosting for a Foundry agent chat UI.
+- Same code, two environments: **test** (free) and **production** (lean, pay-per-use).
+- Keyless: authenticate to Foundry with a managed identity — no secrets in the browser.
+- Works immediately after provisioning; deploy with one command.
+
+**Non-Goals**
+- No always-on compute, no dedicated servers, no container orchestration.
+- No on-prem / agent-to-agent bridging — the UI talks directly to a Foundry agent.
+
+---
+
+## 2. Architecture
+
+```mermaid
+flowchart LR
+    U[Browser<br/>React SPA] --> S[Azure Static Web App<br/>static assets]
+    S --> F[Azure Function<br/>Consumption / managed identity]
+    F --> A[Azure AI Foundry<br/>persistent agent]
 ```
-------------------------------
-## 2. Component Specifications
 
-## 2.1 Static Frontend Layer
+- **Frontend** — React + Vite, compiled to static HTML/JS/CSS. Hosted on Static Web Apps.
+- **API** — Azure Functions (Consumption). Creates threads/runs and polls the agent.
+  Authenticates to Foundry with a **system-assigned managed identity** (no keys).
+- **Foundry** — the customer's existing persistent agent.
 
-* Framework: React 19 / TypeScript / Vite (Compiled down to pure HTML/JS/CSS assets).
-* Styling: Tailwind CSS + Shadcn UI (Provides high-performance, accessible components with zero runtime JavaScript execution overhead).
-* State Management: TanStack Query (@tanstack/react-query) to orchestrate the short-polling message queue and handle state invalidation natively.
-
-## 2.2 Serverless API Gateway Layer
-
-* Platform: Azure Functions (Isolated Worker Model, Node.js).
-* Hosting Tier: Consumption Plan ($0 base cost; first 1 million executions per month are free).
-* Security Configuration: App settings mapped to Azure Key Vault references using System-Assigned Managed Identities. No raw access keys are exposed to the client.
-
-------------------------------
-## 3. Communication Sequence & Execution Control
-To bypass the strict 100-second execution timeout enforced by the Azure Static Web Apps routing proxy, the system relies on an Asynchronous Execution Pattern rather than streaming long-lived server-sent events.
+The API uses an **asynchronous poll pattern** (dispatch -> poll status -> fetch messages)
+so it never holds a long-lived connection and stays within the SWA gateway timeout.
 
 ```mermaid
 sequenceDiagram
-    participant C as Client Browser
-    participant A as SWA API (/api/chat)
-    participant F as Azure AI Foundry
+    participant C as Browser
+    participant A as API (/api/chat)
+    participant F as Foundry agent
 
-    C->>A: 1. POST /prompt (message)
-    A->>F: 2. createMessage() & createRun()
-    A-->>C: 3. Return threadId + runId
-
-    loop Poll every 1.5s until terminal state
-        C->>A: 4. GET /status?threadId&runId
-        A->>F: 5. Retrieve run status
-        A-->>C: 6. Return state (in_progress / completed / failed)
+    C->>A: POST /prompt (message)
+    A->>F: create message and run
+    A-->>C: threadId + runId
+    loop Poll until terminal state
+        C->>A: GET /status?threadId&runId
+        A->>F: get run status
+        A-->>C: in_progress / completed / failed
     end
-
-    C->>A: 7. GET /messages?threadId
-    A->>F: 8. Fetch final message text
-    A-->>C: 9. Return transcript
-    Note over C: 10. Render text to screen
-```
-------------------------------
-## 4. Source Code Blueprint
-
-## 4.1 Serverless Orchestrator (/api/src/functions/postPrompt.ts)
-This serverless function creates the communication channel inside the secure Azure AI environment.
-
-````
-import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";import { AzureAIAgentClient } from "@azure/ai-agents";import { DefaultAzureCredential } from "@azure/identity";
-export async function postPrompt(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
-    try {
-        const { threadId, message } = await request.json() as { threadId?: string; message: string };
-        
-        // Connect securely using Managed Identity or Key Vault strings
-        const client = new AzureAIAgentClient(
-            process.env.AZURE_AI_FOUNDRY_ENDPOINT!,
-            new DefaultAzureCredential()
-        );
-
-        // Reuse existing conversation thread or instantiate a fresh one
-        const activeThreadId = threadId || (await client.createThread()).id;
-
-        // Post the raw prompt into the tracking thread
-        await client.createMessage(activeThreadId, "user", message);
-
-        // Instruct the Foundry backend engine to assign the query to your target Agent
-        const run = await client.createRun(activeThreadId, process.env.AZURE_AI_AGENT_ID!);
-
-        return {
-            status: 200,
-            jsonBody: { threadId: activeThreadId, runId: run.id, status: run.status }
-        };
-    } catch (error: any) {
-        context.error(`Failed to dispatch prompt: ${error.message}`);
-        return { status: 500, jsonBody: { error: "Failed to queue agent task." } };
-    }
-}
-
-app.http("postPrompt", {
-    methods: ["POST"],
-    authLevel: "anonymous",
-    route: "chat/prompt",
-    handler: postPrompt
-});
+    C->>A: GET /messages?threadId
+    A->>F: fetch final text
+    A-->>C: transcript
 ```
 
-## 4.2 Frontend Polling Engine (src/hooks/useAgentSession.ts)
-This component runs completely on the client side, keeping the browser UI fully interactive while the background system executes.
+---
 
-```typescript
-import { useState } from "react";
-export function useAgentSession() {
-  const [messages, setMessages] = useState<any[]>([]);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
+## 3. Cost Tiers
 
-  const submitPrompt = async (userInput: string) => {
-    setIsProcessing(true);
-    
-    // Step 1: Initialize the Turn
-    const initResponse = await fetch("/api/chat/prompt", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ threadId: currentThreadId, message: userInput })
-    });
-    
-    const { threadId, runId } = await initResponse.json();
-    if (!currentThreadId) setCurrentThreadId(threadId);
+| Concern            | Test environment                  | Production environment                |
+| ------------------ | --------------------------------- | ------------------------------------- |
+| Static Web App     | **Free** tier ($0)                | **Standard** tier                     |
+| API wiring         | Function called directly via CORS | Function **linked** as `/api` backend |
+| Function App       | Consumption (Y1)                  | Consumption (Y1)                      |
+| Base cost          | **$0**                            | ~$9/mo SWA + pay-per-execution        |
+| Custom domains/SLA | No                                | Yes                                   |
 
-    // Step 2: Establish the Client Polling Interval
-    const pollInterval = setInterval(async () => {
-      const statusCheck = await fetch(`/api/chat/status?threadId=${threadId}&runId=${runId}`);
-      const { status } = await statusCheck.json();
+Why the split: the SWA **Free** tier does not support linked backends, so in **test** the
+static frontend calls the Function App's public URL directly (CORS is open). In
+**production**, the **Standard** tier links the Function App so everything is served from
+one origin under `/api/*`. Both tiers keep the Function App on Consumption, whose first
+1M executions per month are free.
 
-      if (status === "completed" || status === "failed") {
-        clearInterval(pollInterval);
-        
-        // Step 3: Fetch Updated Timeline Blocks once completed
-        const contentFetch = await fetch(`/api/chat/messages?threadId=${threadId}`);
-        const finalPayload = await contentFetch.json();
-        
-        setMessages(finalPayload.messages);
-        setIsProcessing(false);
-      }
-    }, 1500); // Executed every 1500ms to balance responsiveness and rate limits
-  };
+---
 
-  return { messages, submitPrompt, isProcessing };
-}
+## 4. Components
 
-------------------------------
-## 5. Deployment Configuration
+### 4.1 Frontend (`src/`)
+- React 19 / TypeScript / Vite -> static assets.
+- Reads `VITE_API_BASE` at build time: empty for production (same-origin `/api`), or the
+  Function App URL for the test tier.
+- Cyber-styled terminal chat UI.
 
-## 5.1 CI/CD Configuration File (.github/workflows/azure-static-web-apps.yml)
-This file compiles the UI assets and automatically deploys them to the $0 Static Web Apps container whenever code changes.
+### 4.2 API (`api/`)
+- Azure Functions (Node) with three routes:
+  - `POST /api/chat/prompt` — create/reuse thread, post message, start run.
+  - `GET  /api/chat/status` — poll run status.
+  - `GET  /api/chat/messages` — fetch the final transcript.
+- `DefaultAzureCredential` -> managed identity in Azure. The agent id is resolved once at
+  provision time (`AZURE_AI_AGENT_ID`) to avoid per-instance lookups.
 
-name: Deploy Chat UI to Azure SWA
-on:
-  push:
-    branches:
-      - main
-jobs:
-  build_and_deploy_job:
-    runs-on: ubuntu-latest
-    name: Build and Deploy Job
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
+### 4.3 Infrastructure (`infra/main.bicep`)
+- Parameter `environmentType` = `test` | `production` switches:
+  - SWA SKU (`Free` vs `Standard`).
+  - Whether a linked backend is created (Standard only).
+- Always provisions: Storage, Application Insights, Consumption plan, Function App
+  (system-assigned identity), Static Web App.
 
-      - name: Build And Deploy Static Assets & Functions
-        id: builddeploy
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          action: "upload"
-          app_location: "/"          # Root repository directory for frontend
-          api_location: "api"        # Azure Functions subdirectory
-          output_location: "dist"    # Vite build static outputs target directory
+---
+
+## 5. Provisioning
+
+One command provisions and deploys everything:
+
+```powershell
+./scripts/provision.ps1 `
+    -SubscriptionId "<sub>" `
+    -ResourceGroup "rg-xiaocao" `
+    -FoundryAgentName "<agent>" `
+    -FoundryEndpoint "https://<account>.services.ai.azure.com/api/projects/<project>" `
+    -FoundryResourceId "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.CognitiveServices/accounts/<account>" `
+    -EnvironmentType test   # or: production
 ```
 
-------------------------------
-## 6. Commercialization & White-Label Strategy
-This serverless architecture can easily be packaged and turned into a commercial product:
+The script:
+1. Deploys the Bicep template for the chosen tier.
+2. Grants the Function App identity **Azure AI Developer** on the Foundry account and project.
+3. Resolves the agent id and stores it as `AZURE_AI_AGENT_ID`.
+4. Builds and deploys the Function App and the Static Web App.
 
-   1. Multi-Tenancy Integration: Update the /api/chat/prompt endpoint to read target Azure Foundry Connection Strings from custom tenant headers rather than hardcoded system values.
-   2. Enterprise Marketplace Model: Package this repository as an Azure Application Template (ARM/Bicep). This lets enterprise clients purchase your product from the Azure Marketplace and deploy it into their own Azure subnets with a single click.
-   3. Visual Differentiation: Since standard templates provide plain-text outputs, focus your UI components on rendering structured tool timelines. If the hosted agent executes an MCP-driven code analysis or corporate data query, show a clean, interactive timeline interface that visualizes the agent's work step-by-step.
+> `FoundryResourceId` must be the bare ARM resource id (not a portal URL). Get it with:
+> `az cognitiveservices account show -n <account> -g <rg> --query id -o tsv`
 
-------------------------------
-How would you like to handle your user authentication layer? We can configure it to use Azure SWA's built-in free social logins (Microsoft, GitHub, Google), or we can set up Microsoft Entra ID for secure corporate access.
+---
 
+## 6. Security
+- No secrets in the browser; the API calls Foundry via managed identity.
+- Scoped role assignments granted at provision time (account + project scope).
+- HTTPS-only, TLS 1.2 minimum, storage public access disabled.
+
+---
+
+## 7. CI/CD
+`.github/workflows/azure-static-web-apps.yml` builds the frontend and deploys to SWA on
+push to `main`. The Function App is deployed by the provisioning script.

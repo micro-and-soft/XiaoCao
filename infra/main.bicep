@@ -1,10 +1,19 @@
-// XiaoCao — Serverless Chat UI for Azure AI Foundry
-// Provisions a Static Web App (Standard) + a Function App (managed identity)
-// linked as the SWA backend. RBAC to the Foundry resource is granted by
-// the provisioning script after this deployment completes.
+// XiaoCao — Low-Cost Chat UI for Azure AI Foundry
+// Provisions a Static Web App + a Function App (managed identity) that talks to a
+// Foundry agent. Two cost tiers via `environmentType`:
+//   - test:       SWA Free  ($0); frontend calls the Function App URL directly (CORS).
+//   - production: SWA Standard; Function App linked as the /api backend.
+// RBAC to the Foundry resource is granted by the provisioning script afterwards.
 
 @description('Location for all resources.')
 param location string = resourceGroup().location
+
+@description('Deployment cost tier.')
+@allowed([
+  'test'
+  'production'
+])
+param environmentType string = 'test'
 
 @description('Short prefix used to name resources (3-11 lowercase alphanumerics).')
 @minLength(3)
@@ -26,6 +35,11 @@ var functionAppName = '${namePrefix}-func-${take(suffix, 6)}'
 var planName = '${namePrefix}-plan-${take(suffix, 6)}'
 var insightsName = '${namePrefix}-ai-${take(suffix, 6)}'
 var swaName = '${namePrefix}-swa-${take(suffix, 6)}'
+
+// Production links the Function App as the SWA /api backend (Standard tier only).
+// Test uses the Free tier, which does not support linked backends.
+var isProduction = environmentType == 'production'
+var swaSkuName = isProduction ? 'Standard' : 'Free'
 
 resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: storageName
@@ -118,8 +132,8 @@ resource swa 'Microsoft.Web/staticSites@2023-12-01' = {
   name: swaName
   location: swaLocation
   sku: {
-    name: 'Standard'
-    tier: 'Standard'
+    name: swaSkuName
+    tier: swaSkuName
   }
   properties: {
     stagingEnvironmentPolicy: 'Enabled'
@@ -128,7 +142,8 @@ resource swa 'Microsoft.Web/staticSites@2023-12-01' = {
 }
 
 // Link the Function App as the SWA API backend so /api/* is proxied to it.
-resource swaBackend 'Microsoft.Web/staticSites/linkedBackends@2023-12-01' = {
+// Only supported on the Standard (production) tier.
+resource swaBackend 'Microsoft.Web/staticSites/linkedBackends@2023-12-01' = if (isProduction) {
   parent: swa
   name: 'default'
   properties: {
@@ -137,7 +152,9 @@ resource swaBackend 'Microsoft.Web/staticSites/linkedBackends@2023-12-01' = {
   }
 }
 
+output environmentType string = environmentType
 output functionAppName string = functionApp.name
+output functionAppHostname string = functionApp.properties.defaultHostName
 output functionAppPrincipalId string = functionApp.identity.principalId
 output swaName string = swa.name
 output swaDefaultHostname string = swa.properties.defaultHostname

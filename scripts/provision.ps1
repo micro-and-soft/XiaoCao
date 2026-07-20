@@ -26,6 +26,7 @@ param(
     [Parameter(Mandatory = $true)] [string] $FoundryAgentName,
     [Parameter(Mandatory = $true)] [string] $FoundryEndpoint,
     [Parameter(Mandatory = $true)] [string] $FoundryResourceId,
+    [ValidateSet("test", "production")] [string] $EnvironmentType = "test",
     [string] $Location = "eastasia",
     [string] $SwaLocation = "eastasia",
     [string] $NamePrefix = "xiaocao"
@@ -89,6 +90,7 @@ $outputsJson = az deployment group create `
         location=$Location `
         swaLocation=$SwaLocation `
         namePrefix=$NamePrefix `
+        environmentType=$EnvironmentType `
         foundryEndpoint=$FoundryEndpoint `
         agentName=$FoundryAgentName `
     --query properties.outputs -o json
@@ -98,6 +100,7 @@ if ($LASTEXITCODE -ne 0) {
 $outputs = $outputsJson | ConvertFrom-Json
 
 $functionAppName = $outputs.functionAppName.value
+$functionHostname = $outputs.functionAppHostname.value
 $principalId     = $outputs.functionAppPrincipalId.value
 $swaName         = $outputs.swaName.value
 $swaHostname     = $outputs.swaDefaultHostname.value
@@ -106,6 +109,7 @@ if (-not $functionAppName -or -not $principalId -or -not $swaName) {
     throw "Infrastructure deployment did not return the expected outputs."
 }
 
+Write-Host "    Environment  : $EnvironmentType"
 Write-Host "    Function App : $functionAppName"
 Write-Host "    SWA          : $swaName ($swaHostname)"
 
@@ -195,6 +199,14 @@ Push-Location $root
 try {
     npm install
     $env:VITE_AGENT_NAME = $FoundryAgentName
+    # Production links the Function App at same-origin /api. The free/test tier has no
+    # linked backend, so the static site must call the Function App URL directly (CORS).
+    if ($EnvironmentType -eq "production") {
+        $env:VITE_API_BASE = ""
+    }
+    else {
+        $env:VITE_API_BASE = "https://$functionHostname"
+    }
     npm run build
 
     $token = az staticwebapp secrets list `

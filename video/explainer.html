@@ -59,70 +59,65 @@
 <div class="stage">
   <!-- Slide durations (seconds) chosen to total ~180s -->
   <section class="slide" data-dur="20">
-    <div class="tag">Serverless · White-label · Hybrid AI</div>
+    <div class="tag">Serverless · White-label · Low-cost</div>
     <h1>XiaoCao</h1>
-    <p>A serverless, white-label chat UI for Azure AI Foundry agents — near-zero hosting cost, with private data that never leaves your network.</p>
-    <div data-say>Enterprises want to put an AI agent in front of their users, without paying for always-on servers, and without exposing sensitive systems to the cloud. This is XiaoCao: a serverless, white-label chat experience for Azure AI Foundry agents that runs at near-zero cost and keeps private data on-premises.</div>
+    <p>A serverless, white-label chat UI for Azure AI Foundry agents — near-zero hosting cost, one codebase for both test and production.</p>
+    <div data-say>You've built an agent in Azure AI Foundry. Now you need to put a chat UI in front of it, without paying for always-on servers. This is XiaoCao: a serverless, white-label chat experience for Foundry agents that runs at near-zero cost, with one codebase for both your test and production environments.</div>
   </section>
 
   <section class="slide" data-dur="25">
     <h2>The Problem</h2>
     <div class="flow">
-      <div class="node">☁ Cloud AI<br><small>reasoning · planning</small></div>
-      <div class="arrow">— ✖ —</div>
-      <div class="node mag">🏥 Private data<br><small>behind the firewall</small></div>
+      <div class="node mag">💸 Always-on server<br><small>pays 24/7, mostly idle</small></div>
+      <div class="arrow">vs</div>
+      <div class="node">🧠 Foundry agent<br><small>an API with no UI</small></div>
     </div>
-    <p>Smart orchestration belongs in the cloud. The sensitive data can never leave. How does a cloud agent get answers from a system it isn't allowed to reach?</p>
-    <div data-say>Here's the challenge. The smart orchestration — reasoning, planning, compliance — belongs in the cloud. But the actual patient data lives behind the firewall and can never leave. So how does a cloud agent get answers from a system it isn't allowed to reach?</div>
+    <p>A Foundry agent is just an API. Standing up a server or container to host a UI means paying around the clock for idle compute — overkill for a simple chat front end.</p>
+    <div data-say>A Foundry agent is just an API — it has no user interface. The usual answer is to stand up a web server or a container to host one. But that means paying around the clock for compute that mostly sits idle, and maintaining infrastructure you don't want to own. For a simple chat front end, that's overkill.</div>
   </section>
 
-  <section class="slide" data-dur="40">
+  <section class="slide" data-dur="35">
     <h2>The Architecture</h2>
     <div class="flow">
       <div class="node">🧑 Browser</div><span class="arrow">→</span>
       <div class="node">⚡ Static Web App</div><span class="arrow">→</span>
       <div class="node">🔧 Azure Function</div><span class="arrow">→</span>
-      <div class="node">🧠 Foundry Orchestrator</div>
+      <div class="node">🧠 Foundry agent</div>
     </div>
-    <div class="flow">
-      <div class="node">🔧 Function</div><span class="arrow">→</span>
-      <div class="node mag">📨 Service Bus queue</div><span class="arrow">→</span>
-      <div class="node mag">🖥 Local Daemon (on-prem)</div><span class="arrow">→</span>
-      <div class="node mag">🔐 PHI Agent</div>
-    </div>
-    <p>The daemon connects <b>outbound</b> — the cloud never opens a hole into the private network.</p>
-    <div data-say>XiaoCao uses a hybrid, agent-to-agent pattern. The browser talks to an Azure Static Web App — pure static assets, effectively free to host. It calls a serverless Azure Function, which drives the Foundry orchestrator agent. When the orchestrator needs private data, it doesn't call the hospital directly. Instead it dispatches a task onto an Azure Service Bus queue. A lightweight daemon running inside the private network connects outbound, picks up the task, runs the on-premises agent, and streams status back. The cloud never opens a hole into the private network — the connection is always outbound.</div>
+    <p>Static files are effectively free to host. The Function scales to zero — you pay only when it's working.</p>
+    <div data-say>XiaoCao keeps it lean. The browser loads a React app from Azure Static Web Apps — pure static files, effectively free to host. It calls a serverless Azure Function that talks to your Foundry agent: it opens a conversation, starts a run, polls until the agent is done, and returns the reply. There's no server to manage. Everything scales to zero when no one is using it, so you only pay when it's actually working.</div>
   </section>
 
-  <section class="slide" data-dur="25">
+  <section class="slide" data-dur="30">
     <h2>Security &amp; Cost</h2>
     <div class="row">
       <div class="card"><div class="big">🔑</div>Managed identity<br><small>no secrets in browser</small></div>
-      <div class="card"><div class="big">$0</div>base hosting cost</div>
-      <div class="card"><div class="big">1M</div>free executions / mo</div>
+      <div class="card"><div class="big">$0</div>test environment</div>
+      <div class="card"><div class="big">1M</div>free API calls / mo</div>
     </div>
-    <div data-say>Security is built in. The Function authenticates to Foundry with a managed identity — no keys ever touch the browser. Access is granted with scoped role assignments at provision time. And because the front end is static and the back end is consumption-based, the base cost is essentially zero — you pay only per execution.</div>
+    <p>Test runs entirely on free tiers. Production adds a small SWA fee for custom domains and an SLA.</p>
+    <div data-say>Security is built in. The Function authenticates to Foundry with a managed identity, so no keys are ever exposed in the browser. And cost is the whole point: the test environment runs entirely on free tiers — zero dollars a month. Production adds a small Static Web Apps fee for custom domains and an SLA, while the API stays on consumption billing, where the first million calls each month are free.</div>
   </section>
 
-  <section class="slide" data-dur="45">
+  <section class="slide" data-dur="40">
     <h2>Live Demo</h2>
-    <p>Prompt: <code>get the details of patient 12345</code></p>
+    <p>Prompt: <code>Explain the CAP theorem in three sentences.</code></p>
     <div class="flow">
-      <div class="node">✅ Compliance check</div><span class="arrow">→</span>
-      <div class="node">📤 Dispatched on-prem</div><span class="arrow">→</span>
-      <div class="node">⏳ Progress stream</div><span class="arrow">→</span>
-      <div class="node">🟢 Result</div>
+      <div class="node">💬 Send message</div><span class="arrow">→</span>
+      <div class="node">🔧 Function → agent</div><span class="arrow">→</span>
+      <div class="node">⏳ Poll while thinking</div><span class="arrow">→</span>
+      <div class="node">🟢 Answer</div>
     </div>
-    <p>Data is retrieved by the local agent and relayed back — never stored in the cloud.</p>
-    <div data-say>Let's see it. A user asks for patient twelve three four five. First, a compliance gatekeeper screens the request and strips any direct identifiers. The orchestrator then dispatches the job to the on-premises agent and hands back a task ID. Watch the progress stream in real time as the local agent retrieves the record, and finally the result comes back to the browser, without the raw data ever being stored in the cloud.</div>
+    <p>Same experience whether you point at your test agent or your production one.</p>
+    <div data-say>Here it is in action. The user sends a message, the Function dispatches it to the Foundry agent, and the UI polls in the background while the agent thinks. A moment later, the answer comes back and renders right in the terminal-style interface. Same experience whether you're pointing at your test agent or your production one.</div>
   </section>
 
-  <section class="slide" data-dur="25">
+  <section class="slide" data-dur="30">
     <h2>Provision in One Command</h2>
-    <code>./scripts/provision.ps1 -SubscriptionId … -ResourceGroup … -FoundryAgentName …</code>
-    <p>Provisions the resources, wires up permissions, and deploys the app so it works immediately.</p>
-    <h1 style="margin-top:24px">Cloud intelligence · Private data · Serverless cost</h1>
-    <div data-say>Deployment is a single command. Provide your subscription, resource group, and Foundry agent — the script provisions everything, wires up permissions, and deploys the app so it works immediately. That's XiaoCao: cloud intelligence, private data, serverless cost. Thanks for watching.</div>
+    <code>./scripts/provision.ps1 -SubscriptionId … -FoundryAgentName … -EnvironmentType test</code>
+    <p>Pick <b>test</b> or <b>production</b>. The script provisions resources, wires up permissions, and deploys — working immediately.</p>
+    <h1 style="margin-top:24px">Two environments · One codebase · Near-zero cost</h1>
+    <div data-say>Deployment is a single command. Give it your subscription, resource group, and Foundry agent, then pick test or production. The script provisions the resources, wires up permissions, and deploys the app so it works immediately. Two environments, one codebase, near-zero cost. That's XiaoCao. Thanks for watching.</div>
   </section>
 </div>
 

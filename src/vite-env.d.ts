@@ -2,6 +2,7 @@
 
 interface ImportMetaEnv {
   readonly VITE_AGENT_NAME?: string;
+  readonly VITE_API_BASE?: string;
 }
 
 interface ImportMeta {

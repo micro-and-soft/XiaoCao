@@ -1,44 +1,47 @@
-# XiaoCao / Menshen — 3-Minute Video Script & Storyboard
+# XiaoCao — 3-Minute Video Script & Storyboard
 
-Total runtime target: ~3:00. Narration ≈ 430 words (~145 wpm).
+Focus: a cheap, serverless chat UI for Azure AI Foundry agents — for both test and production.
+Total runtime target: ~3:00. Narration ~430 words (~145 wpm).
 Record with PowerPoint "Record", Clipchamp, or OBS. Or feed narration into a TTS/avatar tool.
 
 ---
 
 ## Scene 1 — Hook (0:00–0:20)
-**Visual:** Title card "XiaoCao — A Serverless, White-Label Chat UI for Azure AI Foundry Agents". Fade to the cyber terminal UI.
+**Visual:** Title card "XiaoCao — A Low-Cost Chat UI for Azure AI Foundry Agents". Fade to the cyber terminal UI.
 **Narration:**
-> Enterprises want to put an AI agent in front of their users — but without paying for always-on servers, and without exposing sensitive systems to the cloud. This is XiaoCao: a serverless, white-label chat experience for Azure AI Foundry agents that runs at near-zero cost and keeps private data on-premises.
+> You've built an agent in Azure AI Foundry. Now you need to put a chat UI in front of it — without paying for always-on servers. This is XiaoCao: a serverless, white-label chat experience for Foundry agents that runs at near-zero cost, with one codebase for both your test and production environments.
 
 ## Scene 2 — The Problem (0:20–0:45)
-**Visual:** Split graphic: "Cloud AI" on one side, "Private hospital data / on-prem systems" on the other, a red gap between them.
+**Visual:** A dedicated VM / app service with a "$$$ always-on" tag, crossed out. Beside it, a Foundry agent icon waiting for a front end.
 **Narration:**
-> Here's the challenge. The smart orchestration — reasoning, planning, compliance — belongs in the cloud. But the actual patient data lives behind the firewall and can never leave. So how does a cloud agent get answers from a system it isn't allowed to reach?
+> A Foundry agent is just an API — it has no user interface. The usual answer is to stand up a web server or a container to host one. But that means paying around the clock for compute that mostly sits idle, and maintaining infrastructure you don't want to own. For a simple chat front end, that's overkill.
 
-## Scene 3 — The Architecture (0:45–1:25)
-**Visual:** Animate the concept diagram: User → Static Web App → Azure Functions → Foundry orchestrator; then Functions → Service Bus → Local Daemon (on-prem) → PHI Agent.
+## Scene 3 — The Architecture (0:45–1:20)
+**Visual:** Animate the diagram: Browser → Static Web App → Azure Function → Foundry agent.
 **Narration:**
-> XiaoCao uses a hybrid, agent-to-agent pattern. The browser talks to an Azure Static Web App — pure static assets, effectively free to host. It calls a serverless Azure Function, which drives the Foundry orchestrator agent. When the orchestrator needs private data, it doesn't call the hospital directly. Instead it dispatches a task onto an Azure Service Bus queue. A lightweight daemon running inside the private network connects outbound, picks up the task, runs the on-premises agent, and streams status back. The cloud never opens a hole into the private network — the connection is always outbound.
+> XiaoCao keeps it lean. The browser loads a React app from Azure Static Web Apps — pure static files, effectively free to host. It calls a serverless Azure Function that talks to your Foundry agent: it opens a conversation, starts a run, polls until the agent is done, and returns the reply. There's no server to manage. Everything scales to zero when no one is using it, so you only pay when it's actually working.
 
-## Scene 4 — Security & Cost (1:25–1:50)
-**Visual:** Icons: managed identity key, "no secrets in browser", "$0 base cost", "1M free executions".
+## Scene 4 — Security & Cost (1:20–1:50)
+**Visual:** Icons: managed identity key, "no secrets in browser". Then a two-column cost table: Test = $0, Production = lean pay-per-use.
 **Narration:**
-> Security is built in. The Function authenticates to Foundry with a managed identity — no keys ever touch the browser. Access is granted with scoped role assignments at provision time. And because the front end is static and the back end is consumption-based, the base cost is essentially zero — you pay only per execution.
+> Security is built in. The Function authenticates to Foundry with a managed identity, so no keys are ever exposed in the browser. And cost is the whole point: the test environment runs entirely on free tiers — zero dollars a month. Production adds a small Static Web Apps fee for custom domains and an SLA, while the API stays on consumption billing, where the first million calls each month are free.
 
-## Scene 5 — Live Demo (1:50–2:35)
-**Visual:** Screen-record the app. Type: "get the details of patient 12345". Show the streamed updates: compliance check → dispatched to on-prem → progress → completed result.
+## Scene 5 — Live Demo (1:50–2:30)
+**Visual:** Screen-record the app. Type a prompt like "Explain the CAP theorem in three sentences." Show the "thinking" indicator, then the streamed answer.
 **Narration:**
-> Let's see it. A user asks for patient twelve-three-four-five. First, a compliance gatekeeper screens the request and strips any direct identifiers. The orchestrator then dispatches the job to the on-premises agent and hands back a task ID. Watch the progress stream in real time as the local agent retrieves the record — and finally the result comes back to the browser, without the raw data ever being stored in the cloud.
+> Here it is in action. The user sends a message, the Function dispatches it to the Foundry agent, and the UI polls in the background while the agent thinks. A moment later, the answer comes back and renders right in the terminal-style interface. Same experience whether you're pointing at your test agent or your production one.
 
-## Scene 6 — Provision & Close (2:35–3:00)
-**Visual:** Show the one-line `provision.ps1` command, then the deployed URL. End on the concept diagram + project name.
+## Scene 6 — Provision & Close (2:30–3:00)
+**Visual:** Show the one-line `provision.ps1` command with `-EnvironmentType test`, then `production`. End on the diagram and project name.
 **Narration:**
-> Deployment is a single command. Provide your subscription, resource group, and Foundry agent — the script provisions everything, wires up permissions, and deploys the app so it works immediately. That's XiaoCao: cloud intelligence, private data, serverless cost. Thanks for watching.
+> Deployment is a single command. Give it your subscription, resource group, and Foundry agent, then pick test or production. The script provisions the resources, wires up permissions, and deploys the app so it works immediately. Two environments, one codebase, near-zero cost. That's XiaoCao. Thanks for watching.
 
 ---
 
 ## Recording tips
 - 1080p, 16:9. Hide bookmarks/desktop clutter.
-- For the demo, pre-warm the app once so there's no cold start on camera.
-- If narrating live, PowerPoint → **Record** → export **MP4** gives you video+audio in one step.
-- For synthetic voice: paste each scene's narration into a TTS tool (e.g. Azure AI Speech) and align clips to the timestamps above.
+- Pre-warm the app once before recording the demo so there's no cold start on camera.
+- PowerPoint → **Record** → export **MP4** gives you video+audio in one step.
+- For synthetic voice: paste each scene's narration into a TTS tool (e.g. Azure AI Speech)
+  and align clips to the timestamps above. The included `explainer.html` can also narrate
+  automatically using the browser's built-in speech synthesis.

@@ -16,6 +16,11 @@ type MessagesResponse = {
 const POLL_MS = 1500;
 const MAX_POLLS = 120; // ~3 minutes safety cap
 
+// Empty for production (same-origin /api via linked backend). For the free/test
+// tier, VITE_API_BASE is the Function App URL so the static site calls it via CORS.
+const API_BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "");
+const api = (path: string) => `${API_BASE}${path}`;
+
 async function readJson<T>(res: Response): Promise<T> {
   if (!res.ok) {
     throw new Error(`Request failed (${res.status})`);
@@ -54,7 +59,7 @@ export function useAgentSession() {
     try {
       // Step 1: dispatch the prompt
       const init = await readJson<PromptResponse>(
-        await fetch("/api/chat/prompt", {
+        await fetch(api("/api/chat/prompt"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ threadId, message: trimmed })
@@ -70,7 +75,7 @@ export function useAgentSession() {
         await delay(POLL_MS);
         const s = await readJson<StatusResponse>(
           await fetch(
-            `/api/chat/status?threadId=${encodeURIComponent(init.threadId)}&runId=${encodeURIComponent(init.runId)}`
+            api(`/api/chat/status?threadId=${encodeURIComponent(init.threadId)}&runId=${encodeURIComponent(init.runId)}`)
           )
         );
         finalState = s.status;
@@ -82,7 +87,7 @@ export function useAgentSession() {
 
       // Step 3: fetch the final transcript
       const payload = await readJson<MessagesResponse>(
-        await fetch(`/api/chat/messages?threadId=${encodeURIComponent(init.threadId)}`)
+        await fetch(api(`/api/chat/messages?threadId=${encodeURIComponent(init.threadId)}`))
       );
 
       const mapped: ChatMessage[] = payload.messages.map((m) => ({
